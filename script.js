@@ -4,7 +4,7 @@ utils.setStyles()
 utils.setGlobals()
 
 var fov = 60
-var camera = {pos: {x: 0, y: 0.5, z: -4}, rot: {x: 0, y: 0, z: 0, w: 0}, quat: [0, 0, 0, 1], useQuat: true}
+var camera = {pos: {x: -4, y: 0.5, z: 0}, rot: {x: 0, y: 0, z: 0, w: 0}, quat: [0, 0, 0, 1], useQuat: true}
 var vel = {x: 0, y: 0, z: 0}
 
 var invertQuat = qc.rotateAxis([0, 0, 0, 1], [1, 0, 0], Math.PI)
@@ -60,17 +60,6 @@ function nVec(vec) {
         vec[0] = 1
     }
     
-    return vec
-}
-
-function nv4(vec) {
-    let length = Math.vec(vec[0]**2 + vec[1]**2 + vec[2]**2 + vec[3]**2)
-
-    vec[0] /= length
-    vec[1] /= length
-    vec[2] /= length
-    vec[3] /= length
-
     return vec
 }
 
@@ -132,7 +121,7 @@ var su = 0
 
 var time = 0
 
-var speed = 3
+var speed = 1/3000
 
 var viewProjection
 
@@ -203,6 +192,48 @@ for (let block of blocks) {
 
 var sendDT = 0
 
+var accumulator = 0
+var accumulatorI = 0
+
+var gKeys = {}
+var gJKeys = {}
+var gMouse = {}
+var cJKeys = {}
+var cMouse = {}
+var iTicked = false
+
+function gameTick() {
+    player.turn(mouseMoved.x * sensitivity, mouseMoved.y * sensitivity)
+
+    player.tick()
+    
+    if (iTicked) {
+        cJKeys = {}
+        cMouse.lclick = false
+        cMouse.rclick = false
+        gJKeys = {}
+        gMouse.lclick = false
+        gMouse.rclick = false
+
+        mouseMoved = {x: 0, y: 0}
+        mouseMoving = {x: 0, y: 0}
+
+        iTicked = false
+    }
+
+    for (let player in players) {
+        players[player].lpos = {...players[player].pos}
+        players[player].lquat = [...players[player].quat]
+        players[player].visualTick2()
+    }
+}
+
+let tickrate = 100
+let tdelta = 1/tickrate
+
+webgpu.depthLayers = 2
+// webgpu.lights.push({pos: [0, 0, 0], colour: [0.8*1.5, 0.8*1.5, 1*1.5], range: 0.5})
+
 function frame(timestamp) {
     let start = performance.now()
     fps++
@@ -216,16 +247,30 @@ function frame(timestamp) {
 
     webgpu.resizeCanvas()
 
-    player.tick()
+    // let timewarp = keys["KeyT"]
 
     if (wConnect && !document.hidden) {
         connectToServer()
         wConnect = false
     }
 
+    [cJKeys, cMouse] = utils.collectInputs(cJKeys, cMouse)
+    // console.log(utils.collectInputs(cJKeys, cMouse))
+
+    accumulatorI = utils.constantTick(60, () => {
+        [gKeys, gJKeys, gMouse] = utils.inputTick(cJKeys, cMouse); 
+        mouseMoved.x = mouseMoving.x
+        mouseMoved.y = mouseMoving.y
+        iTicked = true
+    }, accumulatorI)
+    accumulator = utils.constantTick(tickrate, gameTick, accumulator)
+
+    player.visualTick()
+
     for (let player in playerData) {
         if (id != player && !(player in players)) {
             players[player] = new Player(0, 0, 0)
+            players[player].local = false
             players[player].testBox.visible = false
             players[player].lx = 0
             players[player].ly = 0
@@ -247,13 +292,14 @@ function frame(timestamp) {
             players[player].pos.y = lerp(players[player].ly, playerData[player].y, (time-players[player].lastu)*10)
             players[player].pos.z = lerp(players[player].lz, playerData[player].z, (time-players[player].lastu)*10)
 
-            players[player].visual.quat[0] = lerp(players[player].lqx, playerData[player].qx, (time-players[player].lastu)*10)
-            players[player].visual.quat[1] = lerp(players[player].lqy, playerData[player].qy, (time-players[player].lastu)*10)
-            players[player].visual.quat[2] = lerp(players[player].lqz, playerData[player].qz, (time-players[player].lastu)*10)
-            players[player].visual.quat[3] = lerp(players[player].lqw, playerData[player].qw, (time-players[player].lastu)*10)
+            players[player].quat[0] = lerp(players[player].lqx, playerData[player].qx, (time-players[player].lastu)*10)
+            players[player].quat[1] = lerp(players[player].lqy, playerData[player].qy, (time-players[player].lastu)*10)
+            players[player].quat[2] = lerp(players[player].lqz, playerData[player].qz, (time-players[player].lastu)*10)
+            players[player].quat[3] = lerp(players[player].lqw, playerData[player].qw, (time-players[player].lastu)*10)
 
-            players[player].visual.pos = {...players[player].pos}
+            // players[player].pos = {...players[player].pos}
 
+            players[player].visualTick()
             
 
             // players[player].rot.y = lerp(players[player].langle, playerData[player].angle, (time-players[player].lastu)*10)
@@ -303,6 +349,8 @@ function frame(timestamp) {
 
     // camera.quat = qc.lookAt([camera.pos.x, camera.pos.y, camera.pos.z], [player.pos.x, player.pos.y, player.pos.z])
 
+    webgpu.updateLights = true
+
     webgpu.render([0, 0, 0, 1])
 
     camera.quat = oQuat
@@ -351,13 +399,19 @@ var sensitivity = 0.002 * 10
 
 let turning = vec2(0, 0)
 
+let mouseMoving = {x: 0, y: 0}
+let mouseMoved = {x: 0, y: 0}
+
 input.mouseMove = (event) => {
     input.mouse.x = event.clientX/ui.scale
     input.mouse.y = event.clientY/ui.scale
 
     if (input.isMouseLocked()) {
 
-        player.turn(event.movementX * sensitivity, event.movementY * sensitivity)
+        mouseMoving.x += event.movementX
+        mouseMoving.y += event.movementY
+
+        // player.turn(event.movementX * sensitivity, event.movementY * sensitivity)
 
         // player.turn.x = -toTurn.x
     

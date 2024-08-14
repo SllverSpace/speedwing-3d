@@ -95,6 +95,13 @@ class QuatC {
         let w = utils.lerp(quat1[3], quat2[3], factor)
         return [x, y, z, w]
     }
+    interpolateT(quat1, quat2, tickrate, accumulator) {
+        let x = utils.interpVar(quat1[0], quat2[0], tickrate, accumulator)
+        let y = utils.interpVar(quat1[1], quat2[1], tickrate, accumulator)
+        let z = utils.interpVar(quat1[2], quat2[2], tickrate, accumulator)
+        let w = utils.interpVar(quat1[3], quat2[3], tickrate, accumulator)
+        return [x, y, z, w]
+    }
     lookAt(origin, target, upV=[0,1,0]) {
         let vec32 = utils.prev.vec3
         let direction = vec32.create()

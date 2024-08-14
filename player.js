@@ -6,7 +6,7 @@ class Player {
         this.vel = {x: 0, y: 0, z: 0}
         this.rot = {x: 0, y: 0, z: 0}
         this.lrot = {x: 0, y: 0, z: 0}
-        this.quat = [0, 0, 0, 1]
+        this.quat = qc.rotateAxis([0, 0, 0, 1], [0, 1, 0], -Math.PI/2)
 
         this.frontColour = [0, 0.5, 1, 1]
         this.mainColour = [0, 0.5, 1, 1]
@@ -25,31 +25,46 @@ class Player {
 
         this.startV = new webgpu.Box(0, 0, 0, 0.1, 0.1, 0.1, [1, 0, 0, 1])
         this.endV = new webgpu.Box(0, 0, 0, 0.1, 0.1, 0.1, [0, 1, 0, 1])
+        this.nearWallR = false
 
         this.startV.collisions = false
         this.endV.collisions = false
         this.startV.castShadows = false
         this.endV.castShadows = false
+        this.local = true
+
+        this.startV.visible = false
+        this.endV.visible = false
 
         this.dirVisual = new webgpu.Box(0, 0, 0, 0.1, 0.1, 1, [1, 0, 0, 1])
         this.dirVisual.material.ambient = [1, 0, 0]
         this.dirVisual.material.diffuse = [0, 0, 0]
         this.dirVisual.castShadows = false
         this.dirVisual.collisions = false
+        this.dirVisual.visible = false
         this.lshift = false
         this.camera = 0
         this.cameraI = 0
         this.zoom = 4
 
-        this.trailColour = [0, 0.5, 1, 0.5]
+        this.lquat = [0, 0, 0, 1]
+        this.lpos = {x: 0, y: 0, z: 0}
+
+        this.trailColour = [0.5, 0.8, 1, 0.5]
 
         this.rotated = [0, 0]
 
         this.colours = [
-            [[0, 0.5, 1, 1], [0.25, 0.35, 0.6, 1], [1, 0.5, 0, 1]],
+            [[0, 0.5, 1, 1], [0, 0.5, 1, 1], [0, 0.5, 1, 1]],
             [[0, 0.5, 1, 0.05], [0, 0.5, 1, 0], [0, 1, 2, 0.1]],
             [[0, 0.5, 1, 1], [0, 0.5, 1, 1], [0, 1, 2, 1]]
         ]
+
+        // this.colours = [
+        //     [[0, 0.5 - 0.35, 1 - 0.75, 1], [0, 0.5 - 0.35, 1 - 0.75, 1], [0, 0.5 - 0.35, 1 - 0.75, 1]],
+        //     [[0, 0.5, 1, 0.05], [0, 0.5, 1, 0], [0, 1, 2, 0.1]],
+        //     [[0, 0.5, 1, 1], [0, 0.5, 1, 1], [0, 1, 2, 1]]
+        // ]
 
         this.zv = 0
 
@@ -160,9 +175,9 @@ class Player {
             this.visual.faces[i] = i
         }
         this.visual.material = {
-            ambient: [1, 1, 1],
+            ambient: [0, -0.25, -0.125],
             diffuse: [1, 1, 1],
-            specular: [0, 0, 0],
+            specular: [1, 1, 1],
             shininess: 128
         }
         this.visual.transparent = true
@@ -172,6 +187,9 @@ class Player {
         this.mainColour = this.colours[this.camera % 3][1]
         this.backColour = this.colours[this.camera % 3][2]
 
+        this.mli = webgpu.lights.length
+        this.fli = webgpu.lights.length+1
+
         this.particles = []
 
         this.updateColours()
@@ -179,8 +197,8 @@ class Player {
         // this.visual.oneSide = true
         this.visual.collisions = false
 
-        let flameColour = [1, 0.75, 0, 1]
-        let endFlameColour = [1, 0.5, 0, 1]
+        let flameColour = [0.95, 1, 1, 1]
+        let endFlameColour = [0.5, 0.8, 1, 0.8]
         // this.flame = new webgpu.Box(0, 0, 0, 0.3, 0.3, 0.5, [1, 0.5, 0, 1])
         this.flame = new webgpu.Mesh(0, 0, 0, 0.6, 0.6, 0.5, [
             -0.5, 0, 0,
@@ -204,7 +222,7 @@ class Player {
         this.flame.computeNormals()
         this.flame.collisions = false
         this.flame.useQuat = true
-        this.flame.material.ambient = [1, 1, 1]
+        this.flame.material.ambient = [0, 0, 0]
         this.flame.material.diffuse = [0, 0, 0]
 
         this.trail = new webgpu.Mesh(0, 0, 0, 1, 1, 1, [],[],[],[])
@@ -217,6 +235,10 @@ class Player {
         this.testBox.collisions = false
         this.testBox.transparent = true
         this.testBox.oneSide = false
+        this.testBox.visible = false
+
+        this.spin = 0
+        this.oldQuat = [0, 0, 0, 1]
 
         this.slope = 1
         this.slopeAmt = 0.001
@@ -225,6 +247,9 @@ class Player {
         this.gravity = 15
         this.tsize = 1
         this.crouching = false
+
+        webgpu.lights.push({pos: [0, 0, 0], colour: [0.8*1.5, 0.8*1.5, 1*1.5], range: 0.5})
+        webgpu.lights.push({pos: [0, 0, 0], colour: [0.8*1.5, 0.8*1.5, 1*1.5], range: 0.5})
     }
     updateColours() {
         let faces = [
@@ -327,6 +352,8 @@ class Player {
         return 1 - Math.min(1, Math.abs(offset - this.cameraI))
     }
     turn(x, y) {
+        this.lquat = [...this.quat]
+        
         let invertF = this.getCameraI(2) * 2 - 1
 
         let rotSpeed = 5
@@ -341,11 +368,11 @@ class Player {
             qc.rotateAxis(this.quat, axisX, x * invertF * rotSpeed * delta)
             qc.rotateAxis(this.quat, axisY, -y * rotSpeed * delta)
 
-            qc.rotateAxis(this.flame.quat, axisX, x * invertF * rotSpeed * delta)
-            qc.rotateAxis(this.flame.quat, axisY, -y * rotSpeed * delta)
+            // qc.rotateAxis(this.flame.quat, axisX, x * invertF * rotSpeed * delta)
+            // qc.rotateAxis(this.flame.quat, axisY, -y * rotSpeed * delta)
 
-            qc.rotateAxis(this.visual.quat, axisX, x * invertF * rotSpeed * delta)
-            qc.rotateAxis(this.visual.quat, axisY, -y * rotSpeed * delta)
+            // qc.rotateAxis(this.visual.quat, axisX, x * invertF * rotSpeed * delta)
+            // qc.rotateAxis(this.visual.quat, axisY, -y * rotSpeed * delta)
         } else {
             axisX = qc.rotv3([0, 1, 0], camera.quat)
             axisY = qc.rotv3([1, 0, 0], camera.quat)
@@ -355,33 +382,15 @@ class Player {
         }
     }
     tick() {
-        qc.rotateAxis(this.flame.quat, [0, 1, 0], -this.rotated[1])
-        qc.rotateAxis(this.flame.quat, [1, 0, 0], -this.rotated[0])
-        
+        this.lpos = {...this.pos}
 
-        let moved = false
-        if (this.sprinting) {
-            speed *= 2
-        }
-
-        this.updateColours()
+        let nearWall = this.nearWall(5, 2)
+        this.nearWallR = nearWall
 
         let colliding = this.isColliding()
         if (colliding) {
             this.fixCollision(colliding, 0.01)
         }
-
-        this.testBox.visible = keys["KeyG"]
-
-        let nearWall = this.nearWall(5, 2)
-
-        let forward = qc.rotv3w([0, 0, -1], this.quat)
-        forward = {x: forward[0], y: forward[1], z: forward[2]}
-
-        let side = qc.rotv3w([nearWall ? 0.2 : 0.1, 0, 0], this.visual.quat)
-        let vPos = [this.visual.pos.x, this.visual.pos.y, this.visual.pos.z]
-
-      
 
         // this.trailColour[0] = Math.sin(time*10)/2+0.5
         // this.trailColour[1] = this.trailColour[0]/2
@@ -390,12 +399,90 @@ class Player {
 
         // this.trailColour[3] = nearWall ? 0.75 : 0.5
 
+        let moved = false
+        if (this.sprinting) {
+            speed *= 2
+        }
+
+        let forward = qc.rotv3w([0, 0, -1], this.quat)
+        forward = {x: forward[0], y: forward[1], z: forward[2]}
+
+        let wallSpeed = 250
+
+        if (nearWall) {
+            speed *= wallSpeed
+        }
+
+        if (gKeys["KeyW"]) {
+            this.vel = addv3(this.vel, mulv3(forward, vec3(speed, speed, speed)))
+            // this.vel.x += Math.sin(this.rot.y)*Math.cos(this.rot.x)*speed*delta
+            // this.vel.y -= Math.sin(this.rot.x)*speed*delta
+            // this.vel.z += Math.cos(this.rot.y)*Math.cos(this.rot.x)*speed*delta
+            moved = true
+        }
+        if (gKeys["KeyS"]) {
+            this.vel = subv3(this.vel, mulv3(forward, vec3(speed, speed, speed)))
+            moved = true
+        }
+
+        if (nearWall) {
+            speed /= wallSpeed
+        }
+
+        if (this.sprinting) {
+            speed /= 2
+        }
+        if (!moved) {
+            this.sprinting = false
+        }
+
+        if (gKeys["KeyE"]) {
+            this.sprinting = true
+        }
+
+        if (gKeys["KeyD"]) {
+            this.zv += 0.002
+        }
+
+        if (gKeys["KeyA"]) {
+            this.zv -= 0.002
+        }
+
+        this.zv = lerp(this.zv, 0, 0.1)
+
+        let roll = this.zv
+
+        let axisZ = qc.rotv3([0, 0, -1], this.quat)
+
+        qc.rotateAxis(this.quat, axisZ, roll)
+
+        let friction = nearWall ? 0.5 : 0.01
+
+        this.vel.x = lerp(this.vel.x, 0, friction)
+        this.vel.y = lerp(this.vel.y, 0, friction)
+        this.vel.z = lerp(this.vel.z, 0, friction)
+
+        this.move(this.vel.x, this.vel.y, this.vel.z, 10)
+
+        this.falling += delta
+
+        if (this.pos.y < -25) {
+            this.pos = {x: 0, y: 25, z: 0}
+        }
+
+        this.visualTick2()
+    }
+    visualTick2() {
+        let nearWall = this.nearWallR
+        let side = qc.rotv3w([nearWall ? 0.2 : 0.1, 0, 0], this.visual.quat)
+        let vPos = [this.visual.pos.x, this.visual.pos.y, this.visual.pos.z]
+
         this.trail.vertices.push(...addvl3(vPos, side), ...subvl3(vPos, side))
         this.trail.colours.push(...this.trailColour, ...this.trailColour)
         this.trail.normals.push(0, 1, 0, 0, 1, 0)
         this.trail.faces.push(this.trail.vertices.length/3-1, this.trail.vertices.length/3-2, this.trail.vertices.length/3-3, this.trail.vertices.length/3-2, this.trail.vertices.length/3-3, this.trail.vertices.length/3-4)
 
-        if (this.trail.vertices.length/6 > 1000) {
+        if (this.trail.vertices.length/6 > 500) {
             this.trail.vertices.splice(0, 6)
             this.trail.colours.splice(0, 8)
             this.trail.normals.splice(0, 6)
@@ -409,12 +496,19 @@ class Player {
         }
 
         this.trail.updateBuffers()
+    }
+    visualTick() {
+        this.visual.quat = [...this.oldQuat]
+        this.flame.quat = [...this.oldQuat]
+        // qc.rotateAxis(this.visual.quat, this.axisZ2, -this.spin)
+        // qc.rotateAxis(this.flame.quat, this.axisZ2, -this.spin)
 
-        let wallSpeed = 250
+        qc.rotateAxis(this.flame.quat, [0, 1, 0], -this.rotated[1])
+        qc.rotateAxis(this.flame.quat, [1, 0, 0], -this.rotated[0])
 
-        if (nearWall) {
-            speed *= wallSpeed
-        }
+        this.testBox.visible = keys["KeyG"] && this.local
+
+        let nearWall = this.nearWallR
 
         // let particle = new webgpu.Sphere(this.visual.pos.x, this.visual.pos.y, this.visual.pos.z, 0.2, [1, 0.5, 0, 1], 5)
         // particle.material.ambient = [1, 1, 1]
@@ -428,59 +522,16 @@ class Player {
         // }
 
 
-        if (keys["KeyW"]) {
-            this.vel = addv3(this.vel, mulv3(forward, vec3(speed*delta, speed*delta, speed*delta)))
-            // this.vel.x += Math.sin(this.rot.y)*Math.cos(this.rot.x)*speed*delta
-            // this.vel.y -= Math.sin(this.rot.x)*speed*delta
-            // this.vel.z += Math.cos(this.rot.y)*Math.cos(this.rot.x)*speed*delta
-            moved = true
-        }
-        if (keys["KeyS"]) {
-            this.vel = subv3(this.vel, mulv3(forward, vec3(speed*delta, speed*delta, speed*delta)))
-            moved = true
-        }
-        // if (keys["KeyA"]) {
-        //     this.vel.x -= Math.cos(camera.rot.y)*speed*delta
-        //     this.vel.z += Math.sin(camera.rot.y)*speed*delta
-        //     moved = true
-        // }
-        // if (keys["KeyD"]) {
-        //     this.vel.x += Math.cos(camera.rot.y)*speed*delta
-        //     this.vel.z -= Math.sin(camera.rot.y)*speed*delta
-        //     moved = true
+        // if (jKeys["Space"] && this.falling < 0.1) {
+        //     this.vel.y = this.jumpSpeed*10000
         // }
 
-        if (nearWall) {
-            speed /= wallSpeed
-        }
+        // if (!input.isMouseLocked()) {
+        //     this.turn.x = lerp(this.turn.x, 0, delta*5)
+        //     this.turn.y = lerp(this.turn.y, 0, delta*5)
+        // }
 
-        if (this.sprinting) {
-            speed /= 2
-        }
-        if (!moved) {
-            this.sprinting = false
-        }
-        if (jKeys["Space"] && this.falling < 0.1) {
-            this.vel.y = this.jumpSpeed
-        }
-        if (keys["KeyE"]) {
-            this.sprinting = true
-        }
-
-        if (!input.isMouseLocked()) {
-            this.turn.x = lerp(this.turn.x, 0, delta*5)
-            this.turn.y = lerp(this.turn.y, 0, delta*5)
-        }
-
-        if (keys["KeyD"]) {
-            this.zv += delta/5
-        }
-
-        if (keys["KeyA"]) {
-            this.zv -= delta/5
-        }
-
-        if (jKeys["KeyQ"]) {
+        if (jKeys["KeyQ"] && this.local) {
             this.camera += 1
 
             this.frontColour = this.colours[this.camera % 3][0]
@@ -491,20 +542,9 @@ class Player {
 
         this.cameraI = lerp(this.cameraI, this.camera, delta*10)
 
-        this.zv = lerp(this.zv, 0, delta*10)
+        this.axisZ2 = qc.rotv3([0, 0, -1], this.visual.quat)
 
-        let roll = this.zv * 100 * delta
-
-        let axisZ = qc.rotv3([0, 0, -1], this.quat)
-
-        qc.rotateAxis(this.quat, axisZ, roll)
-        qc.rotateAxis(this.visual.quat, axisZ, roll)
-        qc.rotateAxis(this.flame.quat, axisZ, roll)
-
-        let axisZ2 = qc.rotv3([0, 0, -1], this.visual.quat)
-
-        qc.rotateAxis(this.visual.quat, axisZ2, (Math.sqrt(this.vel.x**2 + this.vel.y**2 + this.vel.z**2)/1 + 1) * delta)
-        qc.rotateAxis(this.flame.quat, axisZ2, (Math.sqrt(this.vel.x**2 + this.vel.y**2 + this.vel.z**2)/1 + 1) * delta)
+        this.spin += (Math.sqrt(this.vel.x**2 + this.vel.y**2 + this.vel.z**2)*100 + 1) * delta
 
         // let rollV = rotv3xzy(vec3(0, 0, roll), vec3(camera.rot.x, -camera.rot.y, camera.rot.z))
         // camera.rot = addv3(camera.rot, rollV)
@@ -516,8 +556,6 @@ class Player {
 
         // camera.rot.x = x * cosRoll - z * sinRoll
         // camera.rot.z = x * sinRoll + z * cosRoll
-
-
 
         // camera.rot.x += Math.sin(camera.rot.x) * this.zv * 100 * delta
 
@@ -531,54 +569,16 @@ class Player {
         // camera.rot.z += roll * Math.cos(-camera.rot.y)
         // camera.rot.w += roll
         // console.log(camera.rot.y)
-
-        if (!keys["ShiftLeft"] && this.crouching) {
-            this.size.y += 0.5
-            this.pos.y += 0.25
-            if (!this.isColliding()) {
-                this.crouching = keys["ShiftLeft"]
-            }
-            this.size.y -= 0.5
-            this.pos.y -= 0.25
-        } else {
-            this.crouching = keys["ShiftLeft"]
-        }
         
-        
-        if (this.crouching) {
-            this.tsize = 0.5
-        } else {
-            this.tsize = 1.25
-        }
+       
 
         let tfov = 60
         if (this.sprinting) {
             tfov = 80
         }
-        fov += (tfov - fov) * delta * 7.5
-
-        let dif = (this.tsize - this.size.y) * delta * 10
-        this.size.y += dif
-        // this.pos.y += dif/2
-
-        if (this.isColliding() && !this.crouching) {
-            this.size.y -= dif
-            // this.pos.y -= dif/2
-            this.crouching = true
-        }
+        if (this.local) fov += (tfov - fov) * delta * 7.5
 
         // this.vel.y -= this.gravity*delta
-        this.falling += delta
-
-        let friction = nearWall ? 0.375 : 0.01
-
-        this.vel.x = lerp(this.vel.x, 0, delta*100*friction)
-        this.vel.y = lerp(this.vel.y, 0, delta*100*friction)
-        this.vel.z = lerp(this.vel.z, 0, delta*100*friction)
-
-        if (this.pos.y < -25) {
-            this.pos = {x: 0, y: 25, z: 0}
-        }
     
         // this.pos.x += this.vel.x*delta
         // if (this.isColliding()) {
@@ -598,72 +598,30 @@ class Player {
         // if (this.isColliding()) {
         //     this.pos.z -= this.vel.z*delta
         // }
-        this.move(this.vel.x*delta, this.vel.y*delta, this.vel.z*delta, 10)
 
         // console.log(this.vel.y)
 
-        this.rot = camera.rot
+        // this.rot = camera.rot
 
-        this.visual.pos = {...this.pos}
+        this.visual.pos.x = utils.interpVar(this.lpos.x, this.pos.x, tickrate, accumulator)
+        this.visual.pos.y = utils.interpVar(this.lpos.y, this.pos.y, tickrate, accumulator)
+        this.visual.pos.z = utils.interpVar(this.lpos.z, this.pos.z, tickrate, accumulator)
+        // this.visual.pos = {...this.pos}
         // this.visual.pos.y += 0.5
         // this.visual.rot.z = Math.PI/4
         // this.visual.rot.z += Math.sqrt(this.vel.x**2 + this.vel.y**2 +  this.vel.z**2) * delta * 2
         // this.visual.size = {...this.size}
 
-        if (!keys["ShiftLeft"]) camera.quat = qc.interpolate(camera.quat, this.quat, delta*20)
+        if (!keys["ShiftLeft"] && this.local) camera.quat = qc.interpolateT(this.lquat, this.quat, tickrate, accumulator)
+
+        this.visual.quat = qc.interpolateT(this.lquat, this.quat, tickrate, accumulator)
+
+        this.oldQuat = [...this.visual.quat]
+
+        qc.rotateAxis(this.visual.quat, this.axisZ2, this.spin)
+        qc.rotateAxis(this.flame.quat, this.axisZ2, this.spin)
 
         // camera.quat = [...this.quat]
-
-        if (!keys["ShiftLeft"]) {
-            this.visual.rot.y = lerp(this.visual.rot.y, this.rot.y, delta*10)
-            this.visual.rot.x = lerp(this.visual.rot.x, this.rot.x, delta*10)
-            this.visual.rot.z = lerp(this.visual.rot.z, this.rot.z, delta*10)
-            // this.visual.rot.z += Math.sqrt(this.vel.x**2 + this.vel.y**2 +  this.vel.z**2) * delta * 2 + delta * 2
-
-            // this.visual.quat.x += delta
-
-            
-
-            // this.visual.quat = qc.interpolate(this.visual.quat, this.quat, delta*10)
-
-            // if (keys["KeyG"]) {
-            //     qc.rotateAxis(this.visual.quat, [0, 1, 0], delta)
-            //     // this.visual.quat.x -= delta
-            //     // qc.forceV(this.visual.quat, "x", this.visual.quat.x)
-            // }
-            // if (keys["KeyH"]) {
-            //     qc.rotateAxis(this.visual.quat, [1, 0, 0], delta)
-            //     // this.visual.quat.x += delta
-            //     // qc.forceV(this.visual.quat, "x", this.visual.quat.x)
-            // }
-            // if (keys["KeyV"]) {
-            //     qc.rotateAxis(this.visual.quat, qc.rotv3([0, 0, 1], this.visual.quat), delta)
-            // }
-            // if (keys["KeyB"]) {
-            //     qc.rotateAxis(this.visual.quat, qc.rotv3([1, 0, 0], this.visual.quat), delta)
-            // }
-            // if (keys["KeyN"]) {
-            //     qc.rotateAxis(this.visual.quat, qc.rotv3([0, 1, 0], this.visual.quat), delta)
-            // }
-
-            // this.startV.pos = {...this.pos}
-            // this.endV.pos = {...this.pos}
-
-            let move = qc.rotv3w([0, 0, -1], this.visual.quat)
-            this.startV.pos.x += move[0]*2
-            this.startV.pos.y += move[1]*2
-            this.startV.pos.z += move[2]*2
-
-            let move2 = qc.rotv3w([-1, 0, 0], this.visual.quat)
-            this.endV.pos.x += move2[0]*2
-            this.endV.pos.y += move2[1]*2
-            this.endV.pos.z += move2[2]*2
-
-            // console.log(qc.getForward(this.visual.quat), qc.getPerp(qc.getForward(this.visual.quat)))
-
-            // this.visual.quat = nv4(this.visual.quat)
-            
-        }
 
         // this.rot.x -= this.turn.y * delta
         // this.rot.y += this.turn.x * delta
@@ -699,15 +657,6 @@ class Player {
         // this.startV.visible = false
         // this.endV.visible = false
 
-        this.dirVisual.pos = divv3(addv3(start, end), vec3(2, 2, 2))
-        this.dirVisual.size.z = Math.sqrt(this.turn.x**2 + this.turn.y**2)
-        this.dirVisual.visible = false
-
-        xzlength = Math.sqrt((end.x-start.x)**2 + (end.z-start.z)**2)
-
-        this.dirVisual.rot.y = Math.atan2(end.x-start.x, end.z-start.z)+Math.PI
-        this.dirVisual.rot.x = Math.atan2(end.y-start.y, xzlength)
-
         // console.log(start, end)
 
         let offsets = [
@@ -718,7 +667,7 @@ class Player {
         // offset2 = addvl3(offset2, )
 
         let offset = qc.rotv3w(offsets[this.camera % 3], this.quat)
-        if (keys["ShiftLeft"]) {
+        if (keys["ShiftLeft"] && this.local) {
             offset = qc.rotv3w(offsets[this.camera % 3], camera.quat)
         }
         offset = {x: offset[0], y: offset[1], z: offset[2]}
@@ -737,7 +686,7 @@ class Player {
         }
 
         let intFactor = intFactors[this.camera % 3] // delta*5
-        camera.pos = addv3(mulv3(subv3(raycast, camera.pos), vec3(intFactor, intFactor, intFactor)), camera.pos)
+        if (this.local) camera.pos = addv3(mulv3(subv3(raycast, camera.pos), vec3(intFactor, intFactor, intFactor)), camera.pos)
 
         let factor2 = Math.cos(camera.rot.z)
 
@@ -771,6 +720,14 @@ class Player {
         qc.normalize(this.quat)
 
         ui.line(canvas.width/2, canvas.height/2, canvas.width/2 + turning.x*100*su, canvas.height/2 + turning.y*100*su, turnL*su*20, [0, 127, 255, 0.5])
+
+        webgpu.lights[this.mli].pos = [this.visual.pos.x, this.visual.pos.y, this.visual.pos.z]
+        webgpu.lights[this.mli].colour = [0, 0.5, 1]
+        webgpu.lights[this.mli].range = 3
+
+        webgpu.lights[this.fli].pos = addvl3([this.visual.pos.x, this.visual.pos.y, this.visual.pos.z], qc.rotv3w([0, 0, 0.5], this.visual.quat))
+        webgpu.lights[this.fli].colour = [0.8*1.5, 0.8*1.5, 1*1.5]
+        webgpu.lights[this.fli].range = 0.5
     }
     getCData() {
         let corners = collisions.getBoxCorners(this.pos.x, this.pos.y, this.pos.z, this.size.x, this.size.y, this.size.z, 0, camera.rot.y, 0)
@@ -965,5 +922,7 @@ class Player {
         this.dirVisual.delete()
         this.startV.delete()
         this.endV.delete()
+        webgpu.lights.splice(this.mli, 1)
+        webgpu.lights.splice(this.fli, 1)
     }
 }

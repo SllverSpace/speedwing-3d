@@ -46,6 +46,33 @@ class Utils {
         this.raths = true
         this.rathsMsg = msg
     }
+    constantTick(tickrate, tick, accumulator) {
+        accumulator += delta
+        while (accumulator > 1/tickrate) {
+            tick()
+            accumulator -= 1/tickrate
+        }
+        return accumulator
+    }
+    collectInputs(jKeys, mouse) {
+        jKeys = {...jKeys, ...input.jKeys}
+        if (input.mouse.lclick) mouse.lclick = true
+        if (input.mouse.rclick) mouse.rclick = true
+        return [jKeys, mouse]
+    }
+    inputTick(cJKeys, cMouse) {
+        let keys = {...input.keys}
+        let jKeys = {...cJKeys}
+
+        let mouse = {...input.mouse}
+        if (cMouse.lclick) mouse.lclick = true
+        if (cMouse.rclick) mouse.rclick = true
+
+        return [keys, jKeys, mouse]
+    }
+    interpVar(lastValue, currentValue, tickrate, accumulator) {
+        return lastValue*(1-accumulator/(1/tickrate)) + currentValue*(accumulator/(1/tickrate))
+    }
     ignoreSafeArea() {
         this.viewportMeta.content += ", viewport-fit=cover"
     }

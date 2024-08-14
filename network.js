@@ -103,10 +103,10 @@ function connectToServer() {
                     players[player].ly = players[player].pos.y
                     players[player].lz = players[player].pos.z
 
-                    players[player].lqx = players[player].visual.quat[0]
-                    players[player].lqy = players[player].visual.quat[1]
-                    players[player].lqz = players[player].visual.quat[2]
-                    players[player].lqw = players[player].visual.quat[3]
+                    players[player].lqx = players[player].quat[0]
+                    players[player].lqy = players[player].quat[1]
+                    players[player].lqz = players[player].quat[2]
+                    players[player].lqw = players[player].quat[3]
 
                     // console.log(time - players[player].lastu)
                     players[player].lastu = time
